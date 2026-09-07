@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #import "enums.c"
+#import "builtins.c"
 
 char *normalSpacing = "    ";
 
@@ -304,11 +305,11 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
 
         case FunctionCallNode: {
             int argCount = currentNode->functionCallNode.argumentCount;
-            bool isPrint = strcmp(currentNode->functionCallNode.functionName, "print") == 0;
-            if (isPrint && argCount != 1) {
+            Builtin *builtin = findBuiltin(currentNode->functionCallNode.functionName);
+            if (builtin != NULL && argCount != builtin->argCount) {
                 fprintf(stderr,
-                        "generateProgram: print() takes exactly 1 argument (got %d)\n",
-                        argCount);
+                        "generateProgram: %s() takes exactly %d argument(s) (got %d)\n",
+                        builtin->name, builtin->argCount, argCount);
                 exit(1);
             }
             if (argCount > 8) {
@@ -338,8 +339,8 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
                 }
             }
 
-            if (isPrint) {
-                fprintf(out, "%sbl _puts\n", normalSpacing);
+            if (builtin != NULL) {
+                fprintf(out, "%sbl %s\n", normalSpacing, builtin->asmSymbol);
             } else {
                 fprintf(out, "%sbl _meowfn_%s\n", normalSpacing, currentNode->functionCallNode.functionName);
             }
