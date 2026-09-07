@@ -71,8 +71,56 @@ Token *nextToken(Tokenizer *tokenizer) {
         currentIndex++;
     }
 
+    // A leading '"' starts a quoted string literal. Consume up to the matching
+    // closing '"', ignoring the usual whitespace/comma/bracket stop rules, and
+    // interpret the \n and \" escape sequences along the way.
+    if (program[currentIndex] == '"') {
+        int strStart = currentIndex + 1;
+        int scanIndex = strStart;
+        int unescapedLength = 0;
+
+        // First pass: find the closing quote and compute the unescaped length.
+        while (program[scanIndex] != '"') {
+            if (program[scanIndex] == '\0') {
+                fprintf(stderr, "Lexer error: unterminated string literal\n");
+                exit(1);
+            }
+            if (program[scanIndex] == '\\' && (program[scanIndex + 1] == 'n' || program[scanIndex + 1] == '"')) {
+                scanIndex += 2;
+            } else {
+                scanIndex += 1;
+            }
+            unescapedLength++;
+        }
+        int closingQuoteIndex = scanIndex;
+
+        Token *token = (Token *)malloc(sizeof(Token));
+        token->type = TOKEN_STRING;
+        token->value = (char *)malloc(unescapedLength + 1);
+
+        // Second pass: copy characters, resolving \n and \" escapes.
+        int readIndex = strStart;
+        int writeIndex = 0;
+        while (readIndex < closingQuoteIndex) {
+            if (program[readIndex] == '\\' && program[readIndex + 1] == 'n') {
+                token->value[writeIndex++] = '\n';
+                readIndex += 2;
+            } else if (program[readIndex] == '\\' && program[readIndex + 1] == '"') {
+                token->value[writeIndex++] = '"';
+                readIndex += 2;
+            } else {
+                token->value[writeIndex++] = program[readIndex];
+                readIndex += 1;
+            }
+        }
+        token->value[writeIndex] = '\0';
+
+        tokenizer->currentIndex = closingQuoteIndex + 1;
+        return token;
+    }
+
     int startIndex = currentIndex;
-    
+
     // Calculate length of token
     int tokenLength = 0;
     while (!isStopLineCharacter(program[currentIndex])) {

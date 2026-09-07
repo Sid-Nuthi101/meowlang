@@ -59,6 +59,7 @@ enum PARSE_TREE_TYPE {
     AssignNode,
     BinaryOpNode,
     NumberNode,
+    StringNode,
     IdentifierNode,
     FunctionCallNode,
     FunctionDefinitionNode,
@@ -82,6 +83,9 @@ typedef struct ParseTreeNode {
         struct {
             int value;
         } numberNode;
+        struct {
+            char *value;
+        } stringNode;
         struct {
             char *identifier;
         } identifierNode;

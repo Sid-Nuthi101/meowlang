@@ -56,6 +56,102 @@ void freeRegister(char *right) {
     exit(1);
 }
 
+#define MAX_STRING_LITERALS 64
+
+typedef struct {
+    char *value;
+    char label[16];
+} StringLiteral;
+
+static StringLiteral stringLiterals[MAX_STRING_LITERALS];
+static int stringLiteralCount = 0;
+
+// Returns the label for a string literal's text, adding it (deduped) if new.
+char *getStringLiteralLabel(char *value) {
+    for (int i = 0; i < stringLiteralCount; i++) {
+        if (strcmp(stringLiterals[i].value, value) == 0) {
+            return stringLiterals[i].label;
+        }
+    }
+
+    if (stringLiteralCount >= MAX_STRING_LITERALS) {
+        fprintf(stderr, "getStringLiteralLabel: too many string literals (max %d)\n", MAX_STRING_LITERALS);
+        exit(1);
+    }
+
+    StringLiteral *literal = &stringLiterals[stringLiteralCount];
+    literal->value = value;
+    snprintf(literal->label, sizeof(literal->label), "Lstr%d", stringLiteralCount);
+    stringLiteralCount++;
+    return literal->label;
+}
+
+// Walks a program tree collecting every distinct StringNode literal, parallel
+// in structure to collectVariables.
+void collectStringLiterals(ParseTreeNode *node) {
+    if (node == NULL) {
+        return;
+    }
+
+    switch (node->type) {
+        case AssignNode:
+            collectStringLiterals(node->assignNode.assignTo);
+            collectStringLiterals(node->assignNode.value);
+            break;
+
+        case BinaryOpNode:
+            collectStringLiterals(node->binaryOpNode.left);
+            collectStringLiterals(node->binaryOpNode.right);
+            break;
+
+        case StringNode:
+            getStringLiteralLabel(node->stringNode.value);
+            break;
+
+        case FunctionCallNode:
+            for (int i = 0; i < node->functionCallNode.argumentCount; i++) {
+                collectStringLiterals(node->functionCallNode.arguments[i]);
+            }
+            break;
+
+        case ReturnNode:
+            collectStringLiterals(node->returnNode.value);
+            break;
+
+        default:
+            break;
+    }
+}
+
+// Writes an .asciz-safe copy of value into out (which must be large enough:
+// worst case every byte escapes, so 2*strlen(value)+1).
+void escapeStringLiteral(char *value, char *out) {
+    char *dst = out;
+    for (char *src = value; *src != '\0'; src++) {
+        switch (*src) {
+            case '\n': *dst++ = '\\'; *dst++ = 'n'; break;
+            case '"':  *dst++ = '\\'; *dst++ = '"'; break;
+            case '\\': *dst++ = '\\'; *dst++ = '\\'; break;
+            default:   *dst++ = *src; break;
+        }
+    }
+    *dst = '\0';
+}
+
+void emitStringLiterals(FILE *out) {
+    if (stringLiteralCount == 0) {
+        return;
+    }
+
+    fprintf(out, ".section __TEXT,__cstring,cstring_literals\n");
+    for (int i = 0; i < stringLiteralCount; i++) {
+        char escaped[2 * strlen(stringLiterals[i].value) + 1];
+        escapeStringLiteral(stringLiterals[i].value, escaped);
+        fprintf(out, "%s:\n", stringLiterals[i].label);
+        fprintf(out, "%s.asciz \"%s\"\n", normalSpacing, escaped);
+    }
+}
+
 int getVariableOffset(char *name) {
     for (int i = 0; i < variableCount; i++) {
         if (strcmp(variables[i].name, name) == 0) {
@@ -162,6 +258,14 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
             char *reg = allocateRegister();
             int offset = getVariableOffset(currentNode->identifierNode.identifier);
             fprintf(out, "%sldr %s, [sp, #%d]\n", normalSpacing, reg, offset);
+            return reg;
+        }
+
+        case StringNode: {
+            char *reg = allocateRegister();
+            char *label = getStringLiteralLabel(currentNode->stringNode.value);
+            fprintf(out, "%sadrp %s, %s@PAGE\n", normalSpacing, reg, label);
+            fprintf(out, "%sadd %s, %s, %s@PAGEOFF\n", normalSpacing, reg, reg, label);
             return reg;
         }
 
@@ -273,6 +377,7 @@ void generateFunctionBody(FILE *out, ParseTreeNode **statements, char **paramNam
 
     for (int i = 0; statements[i] != NULL; i++) {
         collectVariables(statements[i]);
+        collectStringLiterals(statements[i]);
     }
 
     int variablesSize = variableCount * 8;
@@ -368,6 +473,8 @@ void run(ParseTreeNode **treeNodes) {
     fprintf(out, "_main:\n");
 
     generateFunctionBody(out, mainStatements, NULL, 0, false);
+
+    emitStringLiterals(out);
 
     free(mainStatements);
     fclose(out);

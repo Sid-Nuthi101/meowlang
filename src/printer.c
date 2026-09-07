@@ -25,6 +25,10 @@ void printNodeValue(ParseTreeNode *node) {
             printf("%s", node->identifierNode.identifier);
             break;
 
+        case StringNode:
+            printf("STRING \"%s\"", node->stringNode.value);
+            break;
+
         case FunctionCallNode:
             printf("CALL %s", node->functionCallNode.functionName);
             break;
