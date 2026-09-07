@@ -455,7 +455,6 @@ int run(ParseTreeNode **treeNodes) {
     char asmPath[600];
     char binPath[600];
     snprintf(asmPath, sizeof(asmPath), "%s/meowlang_output.s", tempDir);
-    snprintf(binPath, sizeof(binPath), "%s/hi", tempDir);
 
     FILE *out = fopen(asmPath, "w");
 
