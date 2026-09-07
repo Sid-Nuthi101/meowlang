@@ -57,6 +57,11 @@ Token *popNextExpression(Parser *parser) { // pops the next expression for + - *
                 return expressionTokens;
             }
         }
+        if (token->type == TOKEN_STRING) {
+            if (firstToken) {
+                return expressionTokens;
+            }
+        }
         if (token->type == TOKEN_IDENTIFIER) {
             // A lone identifier is a complete one-token expression, UNLESS it's
             // immediately followed by '(' (a function call) - then we must keep
@@ -349,6 +354,10 @@ ParseTreeNode **parse(Token *token_list, int depth) {
             if (token->type == TOKEN_NUMBER) {
                 nextNode->type = NumberNode;
                 nextNode->numberNode.value = atoi(token->value);
+                parser->current_pos++;
+            } else if (token->type == TOKEN_STRING) {
+                nextNode->type = StringNode;
+                nextNode->stringNode.value = strdup(token->value);
                 parser->current_pos++;
             } else if (token->type == TOKEN_IDENTIFIER) {
                 // two choices here - either a variable or a function call
