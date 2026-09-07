@@ -1,0 +1,4 @@
+s = "hello from a variable"
+
+print("hello world")
+print(s)

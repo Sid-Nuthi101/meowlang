@@ -304,6 +304,13 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
 
         case FunctionCallNode: {
             int argCount = currentNode->functionCallNode.argumentCount;
+            bool isPrint = strcmp(currentNode->functionCallNode.functionName, "print") == 0;
+            if (isPrint && argCount != 1) {
+                fprintf(stderr,
+                        "generateProgram: print() takes exactly 1 argument (got %d)\n",
+                        argCount);
+                exit(1);
+            }
             if (argCount > 8) {
                 fprintf(stderr,
                         "generateProgram: function calls with more than 8 arguments are not supported (call to %s)\n",
@@ -331,7 +338,11 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
                 }
             }
 
-            fprintf(out, "%sbl _meowfn_%s\n", normalSpacing, currentNode->functionCallNode.functionName);
+            if (isPrint) {
+                fprintf(out, "%sbl _puts\n", normalSpacing);
+            } else {
+                fprintf(out, "%sbl _meowfn_%s\n", normalSpacing, currentNode->functionCallNode.functionName);
+            }
 
             for (int i = 0; i < NUM_SCRATCH_REGISTERS; i++) {
                 if (spilled[i]) {
