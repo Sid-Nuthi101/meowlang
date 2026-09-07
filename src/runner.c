@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #import "enums.c"
 #import "builtins.c"
 
@@ -437,7 +438,7 @@ void generateFunctionBody(FILE *out, ParseTreeNode **statements, char **paramNam
     fprintf(out, "%sret\n", normalSpacing);
 }
 
-void run(ParseTreeNode **treeNodes) {
+int run(ParseTreeNode **treeNodes) {
     FILE *out = fopen("outputs/meowlang_output.s", "w");
 
     int totalCount = 0;
@@ -499,4 +500,8 @@ void run(ParseTreeNode **treeNodes) {
         fprintf(stderr, "Compilation failed\n");
         exit(1);
     }
+
+    fflush(NULL); // flush our own buffered stdout/stderr before the child writes to the same terminal
+    int runResult = system("./outputs/hi");
+    return WEXITSTATUS(runResult);
 }
