@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #import "enums.c"
 #import "builtins.c"
 
@@ -439,7 +440,24 @@ void generateFunctionBody(FILE *out, ParseTreeNode **statements, char **paramNam
 }
 
 int run(ParseTreeNode **treeNodes) {
-    FILE *out = fopen("outputs/meowlang_output.s", "w");
+    char *tmpBase = getenv("TMPDIR");
+    if (tmpBase == NULL) {
+        tmpBase = "/tmp";
+    }
+    char tempDirTemplate[512];
+    snprintf(tempDirTemplate, sizeof(tempDirTemplate), "%s/meowlang-XXXXXX", tmpBase);
+    char *tempDir = mkdtemp(tempDirTemplate);
+    if (tempDir == NULL) {
+        fprintf(stderr, "run: could not create a temporary build directory\n");
+        exit(1);
+    }
+
+    char asmPath[600];
+    char binPath[600];
+    snprintf(asmPath, sizeof(asmPath), "%s/meowlang_output.s", tempDir);
+    snprintf(binPath, sizeof(binPath), "%s/hi", tempDir);
+
+    FILE *out = fopen(asmPath, "w");
 
     int totalCount = 0;
     for (int i = 0; treeNodes[i] != NULL; i++) {
@@ -492,16 +510,24 @@ int run(ParseTreeNode **treeNodes) {
     free(mainStatements);
     fclose(out);
 
-    int result = system(
-        "clang outputs/meowlang_output.s -o outputs/hi"
-    );
+    char compileCommand[1300];
+    snprintf(compileCommand, sizeof(compileCommand), "clang %s -o %s", asmPath, binPath);
+    int result = system(compileCommand);
 
     if (result != 0) {
-        fprintf(stderr, "Compilation failed\n");
+        // Leave the assembly behind on failure so it can be inspected; only the
+        // directory's compiled binary (which doesn't exist) is skipped.
+        fprintf(stderr, "Compilation failed (assembly left at %s)\n", asmPath);
         exit(1);
     }
 
     fflush(NULL); // flush our own buffered stdout/stderr before the child writes to the same terminal
-    int runResult = system("./outputs/hi");
-    return WEXITSTATUS(runResult);
+    int runResult = system(binPath);
+    int exitCode = WEXITSTATUS(runResult);
+
+    remove(asmPath);
+    remove(binPath);
+    rmdir(tempDir);
+
+    return exitCode;
 }
