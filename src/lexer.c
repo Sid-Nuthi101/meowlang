@@ -68,126 +68,117 @@ void pushIndent(Tokenizer *tokenizer, char *whitespace) {
     tokenizer->indentStack[tokenizer->indentStackSize++] = whitespace; // takes ownership of whitespace
 }
 
-// Called when tokenizer->atLineStart is set (right after a newline, or at
-// the very start of the file). Looks ahead from tokenizer->currentIndex,
-// skipping any fully blank lines (whitespace-only or empty - these must not
-// affect indentation, matching Python), then compares the leading
-// whitespace of the next non-blank line against the indent stack:
-//   - exact match with the top            -> no change
-//   - top is a strict prefix (extension)   -> push, queue one TOKEN_INDENT
-//   - a strict prefix of the top, matching -> pop down to it, queue that
-//     some entry further down the stack       many TOKEN_DEDENTs
-//   - anything else (not comparable, e.g. mixed tabs/spaces, or a dedent
-//     that lands on a level never pushed) -> lexer error
-// Leaves tokenizer->currentIndex positioned at the first real character of
-// that line, or at the terminating '\0' if only blank lines remain (in
-// which case the generic EOF handling in nextToken() flushes any remaining
-// indent levels).
-void updateIndentation(Tokenizer *tokenizer) {
-    char *program = tokenizer->codeSource->program;
-    int idx = tokenizer->currentIndex;
-
+// Returns the index where the next non-blank line's leading whitespace
+// begins, skipping over any whitespace-only lines along the way (blank
+// lines don't affect indentation, matching Python).
+int skipBlankLines(char *program, int idx) {
     while (1) {
-        int wsStart = idx;
+        int lineStart = idx;
         while (program[idx] == ' ' || program[idx] == '\t') {
             idx++;
         }
         if (program[idx] == '\n') {
-            // Fully blank line - doesn't affect indentation, keep looking.
             idx++;
             continue;
         }
-        if (program[idx] == '\0') {
-            tokenizer->currentIndex = idx;
-            return;
-        }
+        return lineStart;
+    }
+}
 
-        int wsLen = idx - wsStart;
-        char *W = (char *)malloc(wsLen + 1);
-        memcpy(W, program + wsStart, wsLen);
-        W[wsLen] = '\0';
+// Pops the indent stack down to size newSize, freeing the discarded levels
+// and queuing one TOKEN_DEDENT per level popped.
+void popIndentStackTo(Tokenizer *tokenizer, int newSize) {
+    for (int i = newSize; i < tokenizer->indentStackSize; i++) {
+        free(tokenizer->indentStack[i]);
+    }
+    tokenizer->pendingDedentCount = tokenizer->indentStackSize - newSize;
+    tokenizer->indentStackSize = newSize;
+}
 
-        char *top = tokenizer->indentStack[tokenizer->indentStackSize - 1];
+// Called at the start of each logical line. Compares this line's leading
+// whitespace against the indent stack byte-for-byte (never tab-expanded,
+// so ambiguous tab/space mixing is rejected rather than guessed at) and
+// queues TOKEN_INDENT/TOKEN_DEDENT accordingly.
+void updateIndentation(Tokenizer *tokenizer) {
+    char *program = tokenizer->codeSource->program;
+    int wsStart = skipBlankLines(program, tokenizer->currentIndex);
 
-        if (strcmp(top, W) == 0) {
-            free(W); // same indentation level as before, nothing to do
-        } else if (isStrictPrefix(top, W)) {
-            pushIndent(tokenizer, W); // stack now owns W
+    int idx = wsStart;
+    while (program[idx] == ' ' || program[idx] == '\t') {
+        idx++;
+    }
+    if (program[idx] == '\0') {
+        tokenizer->currentIndex = idx;
+        return;
+    }
+
+    int wsLen = idx - wsStart;
+    char *top = tokenizer->indentStack[tokenizer->indentStackSize - 1];
+    bool sameAsTop = (int)strlen(top) == wsLen && memcmp(top, program + wsStart, wsLen) == 0;
+
+    if (!sameAsTop) {
+        char *lineIndent = (char *)malloc(wsLen + 1);
+        memcpy(lineIndent, program + wsStart, wsLen);
+        lineIndent[wsLen] = '\0';
+
+        if (isStrictPrefix(top, lineIndent)) {
+            pushIndent(tokenizer, lineIndent); // stack now owns lineIndent
             tokenizer->pendingIndent = true;
-        } else if (isStrictPrefix(W, top)) {
-            // A shorter, byte-for-byte-comparable prefix of the current
-            // level - this is a dedent, provided it lands exactly on a
-            // level we've actually pushed before.
+        } else if (isStrictPrefix(lineIndent, top)) {
             int k = tokenizer->indentStackSize - 2;
-            while (k >= 0 && strcmp(tokenizer->indentStack[k], W) != 0) {
+            while (k >= 0 && strcmp(tokenizer->indentStack[k], lineIndent) != 0) {
                 k--;
             }
             if (k < 0) {
                 fprintf(stderr, "Lexer error: unindent does not match any outer indentation level\n");
                 exit(1);
             }
-            for (int i = k + 1; i < tokenizer->indentStackSize; i++) {
-                free(tokenizer->indentStack[i]);
-            }
-            tokenizer->pendingDedentCount = tokenizer->indentStackSize - 1 - k;
-            tokenizer->indentStackSize = k + 1;
-            free(W);
+            popIndentStackTo(tokenizer, k + 1);
+            free(lineIndent);
         } else {
             fprintf(stderr, "Lexer error: inconsistent use of tabs and spaces in indentation\n");
             exit(1);
         }
-
-        tokenizer->currentIndex = idx;
-        return;
     }
+
+    tokenizer->currentIndex = idx;
 }
 
-// Emits the TOKEN_EOF token, first flushing (one per call, via the
-// pendingDedentCount queue drained at the top of nextToken()) any
-// indentation levels still open at end of file, so the parser never needs
-// special "unclosed block at EOF" handling.
+Token *makeToken(enum TokenType type, char *value) {
+    Token *token = (Token *)malloc(sizeof(Token));
+    token->type = type;
+    token->value = value;
+    return token;
+}
+
+// Flushes any indentation levels still open at EOF (so the parser never
+// needs special "unclosed block at EOF" handling), then emits either the
+// next queued TOKEN_DEDENT or, once the queue is empty, TOKEN_EOF.
 Token *emitEOFOrDedent(Tokenizer *tokenizer, int atIndex) {
     if (tokenizer->indentStackSize > 1) {
-        for (int i = 1; i < tokenizer->indentStackSize; i++) {
-            free(tokenizer->indentStack[i]);
-        }
-        tokenizer->pendingDedentCount = tokenizer->indentStackSize - 1;
-        tokenizer->indentStackSize = 1;
+        popIndentStackTo(tokenizer, 1);
     }
     tokenizer->currentIndex = atIndex;
 
     if (tokenizer->pendingDedentCount > 0) {
         tokenizer->pendingDedentCount--;
-        Token *token = (Token *)malloc(sizeof(Token));
-        token->type = TOKEN_DEDENT;
-        token->value = "";
-        return token;
+        return makeToken(TOKEN_DEDENT, "");
     }
 
-    Token *token = (Token *)malloc(sizeof(Token));
-    token->type = TOKEN_EOF;
-    token->value = "";
-    tokenizer->doneReading = true; // Mark that we are done reading the program
+    tokenizer->doneReading = true;
     tokenizer->currentIndex = atIndex + 1;
-    return token;
+    return makeToken(TOKEN_EOF, "");
 }
 
 Token *nextToken(Tokenizer *tokenizer) {
-    // Drain any queued TOKEN_DEDENTs first, one per call.
+    // Drain any queued TOKEN_DEDENTs before TOKEN_INDENT, one per call.
     if (tokenizer->pendingDedentCount > 0) {
         tokenizer->pendingDedentCount--;
-        Token *token = (Token *)malloc(sizeof(Token));
-        token->type = TOKEN_DEDENT;
-        token->value = "";
-        return token;
+        return makeToken(TOKEN_DEDENT, "");
     }
-    // Then a queued TOKEN_INDENT, if any.
     if (tokenizer->pendingIndent) {
         tokenizer->pendingIndent = false;
-        Token *token = (Token *)malloc(sizeof(Token));
-        token->type = TOKEN_INDENT;
-        token->value = "";
-        return token;
+        return makeToken(TOKEN_INDENT, "");
     }
     // At the start of a logical line, measure indentation before scanning
     // the line's first real token.
