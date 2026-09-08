@@ -439,7 +439,7 @@ void generateFunctionBody(FILE *out, ParseTreeNode **statements, char **paramNam
     fprintf(out, "%sret\n", normalSpacing);
 }
 
-int run(ParseTreeNode **treeNodes) {
+int run(ParseTreeNode **treeNodes, bool debug) {
     char *tmpBase = getenv("TMPDIR");
     if (tmpBase == NULL) {
         tmpBase = "/tmp";
@@ -455,6 +455,12 @@ int run(ParseTreeNode **treeNodes) {
     char asmPath[600];
     char binPath[600];
     snprintf(asmPath, sizeof(asmPath), "%s/meowlang_output.s", tempDir);
+    snprintf(binPath, sizeof(binPath), "%s/hi", tempDir);
+
+    if (debug) {
+        fprintf(stderr, "[debug] build dir: %s\n[debug] assembly: %s\n[debug] binary: %s\n",
+                tempDir, asmPath, binPath);
+    }
 
     FILE *out = fopen(asmPath, "w");
 
@@ -524,9 +530,11 @@ int run(ParseTreeNode **treeNodes) {
     int runResult = system(binPath);
     int exitCode = WEXITSTATUS(runResult);
 
-    remove(asmPath);
-    remove(binPath);
-    rmdir(tempDir);
+    if (!debug) {
+        remove(asmPath);
+        remove(binPath);
+        rmdir(tempDir);
+    }
 
     return exitCode;
 }

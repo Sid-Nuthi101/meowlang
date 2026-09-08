@@ -9,16 +9,25 @@
 
 int main(int argc, char *argv[])
 {
-    if (argc < 2) {
+    bool debug = false;
+    char *filename = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--debug") == 0 || strcmp(argv[i], "-d") == 0) {
+            debug = true;
+        } else if (filename == NULL) {
+            filename = argv[i];
+        } else {
+            printf("ERROR: Only one source file can be passed as argument");
+            return 1;
+        }
+    }
+
+    if (filename == NULL) {
         printf("ERROR: File source must be passed as first argument");
         return 1;
     }
-    else if (argc > 2) {
-        printf("ERROR: Only one source file can be passed as argument");
-        return 1;
-    }
     else {
-        char *filename = argv[1];
         // Open the file source and read its contents
         FILE *file = fopen(filename, "r");
         if (file == NULL) {
@@ -70,7 +79,7 @@ int main(int argc, char *argv[])
                     fprintf(stdout, "\n\n");
                 }
                 fprintf(stdout, "\n\n RUNNING PROGRAM \n\n");
-                return run(parse_tree);
+                return run(parse_tree, debug);
             }
         }
         return 0;

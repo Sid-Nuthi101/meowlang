@@ -33,6 +33,8 @@ enum TokenType {
     TOKEN_COMMA,
     TOKEN_PURR,
     TOKEN_MEOW,
+    TOKEN_INDENT,
+    TOKEN_DEDENT,
     TOKEN_EOF,
     TOKEN_UNKNOWN
 };
