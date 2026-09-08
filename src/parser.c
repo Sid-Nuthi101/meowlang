@@ -219,7 +219,8 @@ void insertNode(
     }
 
     if (useRoot->type != AssignNode &&
-        useRoot->type != BinaryOpNode) {
+        useRoot->type != BinaryOpNode &&
+        useRoot->type != ReturnNode) {
 
         nextNode->binaryOpNode.left = useRoot;
         useRoot->parent = nextNode;
@@ -243,6 +244,27 @@ void insertNode(
         }
 
         useRoot->assignNode.value = nextNode;
+        nextNode->parent = useRoot;
+
+        if (nextNode->binaryOpNode.right != NULL) {
+            nextNode->binaryOpNode.right->parent = nextNode;
+        }
+
+        *inputRoot = nextNode;
+        return;
+    }
+
+    if (useRoot->type == ReturnNode) { // meow's expression, truncated to one token by popNextExpression
+        ParseTreeNode *oldValue =
+            useRoot->returnNode.value;
+
+        nextNode->binaryOpNode.left = oldValue;
+
+        if (oldValue != NULL) {
+            oldValue->parent = nextNode;
+        }
+
+        useRoot->returnNode.value = nextNode;
         nextNode->parent = useRoot;
 
         if (nextNode->binaryOpNode.right != NULL) {
