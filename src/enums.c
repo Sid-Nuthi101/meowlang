@@ -31,6 +31,7 @@ enum TokenType {
     TOKEN_BRACKET_CLOSE,
     TOKEN_NEWLINE,
     TOKEN_COMMA,
+    TOKEN_COLON,
     TOKEN_PURR,
     TOKEN_MEOW,
     TOKEN_INDENT,
@@ -50,6 +51,13 @@ typedef struct {
     CodeSource *codeSource;
     int currentIndex;
     bool doneReading;
+
+    // indentStack[0] is always "" (column 0); each level above it is the
+    // raw leading-whitespace string of the line that opened it.
+    char **indentStack;
+    int indentStackSize;
+    int pendingDedentCount; // TOKEN_DEDENTs still owed from the last indentation check
+    bool atLineStart;
 } Tokenizer;
 
 typedef struct {

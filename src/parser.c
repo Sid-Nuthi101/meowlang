@@ -26,6 +26,13 @@ ParseTreeNode *toRoot(ParseTreeNode *currentRoot) {
     return root;
 }
 
+void expectTokenType(Parser *parser, enum TokenType expected, char *errorMessage) {
+    if (parser->token_list[parser->current_pos].type != expected) {
+        fprintf(stderr, "Parser error: %s\n", errorMessage);
+        exit(1);
+    }
+}
+
 bool isOperand(Token *token) {
     return (token->type == TOKEN_PLUS || token->type == TOKEN_MINUS ||
                     token->type == TOKEN_MULTIPLY || token->type == TOKEN_DIVIDE ||
@@ -85,37 +92,53 @@ Token *popNextExpression(Parser *parser) { // pops the next expression for + - *
     return expressionTokens;
 }
 
-Token *popInnerExpression(Parser *parser) { // parses ()
+// Collects tokens between a matching openType/closeType pair, tracking
+// nesting depth so an inner pair of the same kind doesn't close it early.
+// consumeCloser is false for INDENT/DEDENT: the statement loop needs to
+// see the closing DEDENT itself, the same way it sees a closing TOKEN_NEWLINE.
+Token *popBalancedTokens(Parser *parser, enum TokenType openType, enum TokenType closeType, bool consumeCloser) {
     int capacity = 64;
-    Token *expressionTokens = (Token *)calloc(capacity, sizeof(Token)); // zeroed so unused slots read as TOKEN_NULL (0)
+    Token *tokens = (Token *)calloc(capacity, sizeof(Token)); // zeroed so unused slots read as TOKEN_NULL (0)
     int currentDepth = 1;
-    bool firstToken = true;
     int count = 0;
-    parser->current_pos++; // eat the opening (
+    parser->current_pos++; // eat the opening token
     while (
         parser->token_list[parser->current_pos].type != TOKEN_EOF &&
         parser->token_list[parser->current_pos].type != TOKEN_NULL
     ) {
         Token *token = &parser->token_list[parser->current_pos];
-        parser->current_pos++;
-        if (token->type == TOKEN_BRACKET_OPEN) {
-            currentDepth++;
-        }
-        if (token->type == TOKEN_BRACKET_CLOSE) {
+
+        if (token->type == closeType) {
             currentDepth--;
-            if (currentDepth == 0)
-                return expressionTokens;
+            if (currentDepth == 0) {
+                if (consumeCloser) {
+                    parser->current_pos++;
+                }
+                return tokens;
+            }
+        }
+
+        parser->current_pos++;
+        if (token->type == openType) {
+            currentDepth++;
         }
         if (count >= capacity) {
             int oldCapacity = capacity;
             capacity *= 2;
-            expressionTokens = realloc(expressionTokens, capacity * sizeof(Token));
-            memset(expressionTokens + oldCapacity, 0, (capacity - oldCapacity) * sizeof(Token));
+            tokens = realloc(tokens, capacity * sizeof(Token));
+            memset(tokens + oldCapacity, 0, (capacity - oldCapacity) * sizeof(Token));
         }
-        expressionTokens[count++] = *token;
-
+        tokens[count++] = *token;
     }
-    return expressionTokens;
+    return tokens;
+}
+
+Token *popInnerExpression(Parser *parser) { // parses (...)
+    return popBalancedTokens(parser, TOKEN_BRACKET_OPEN, TOKEN_BRACKET_CLOSE, true);
+}
+
+Token *popIndentedBlock(Parser *parser) { // parses an indented function body
+    return popBalancedTokens(parser, TOKEN_INDENT, TOKEN_DEDENT, false);
 }
 
 ParseTreeNode **popArguments(Parser *parser, int initialDepth) {
@@ -366,9 +389,11 @@ ParseTreeNode **parse(Token *token_list, int depth) {
         // Parse tokens and build the parse tree
         bool eof_reached = false;
         ParseTreeNode *currentRoot = NULL;
-        // Line by line parse
-        while(parser->token_list[parser->current_pos].type != TOKEN_NEWLINE 
-            && parser->token_list[parser->current_pos].type != TOKEN_NULL) {
+        // A statement also ends at TOKEN_DEDENT, left unconsumed by
+        // popIndentedBlock for a function definition's body.
+        while(parser->token_list[parser->current_pos].type != TOKEN_NEWLINE
+            && parser->token_list[parser->current_pos].type != TOKEN_NULL
+            && parser->token_list[parser->current_pos].type != TOKEN_DEDENT) {
             Token *token = &parser->token_list[parser->current_pos];
             ParseTreeNode *nextNode = (ParseTreeNode *)malloc(sizeof(ParseTreeNode));
             nextNode->parent = NULL;
@@ -442,8 +467,12 @@ ParseTreeNode **parse(Token *token_list, int depth) {
                     argCount++;
                 }
                 nextNode->functionDefinitionNode.argumentCount = argCount;
-                // current_pos now sits on the opening '{' of the function body
-                Token *bodyTokens = popInnerExpression(parser);
+                expectTokenType(parser, TOKEN_COLON, "expected ':' after function parameters");
+                parser->current_pos++; // eat ':'
+                expectTokenType(parser, TOKEN_NEWLINE, "expected newline after ':'");
+                parser->current_pos++; // eat the newline
+                expectTokenType(parser, TOKEN_INDENT, "expected an indented block after function definition");
+                Token *bodyTokens = popIndentedBlock(parser);
                 nextNode->functionDefinitionNode.functionCode = parse(bodyTokens, depth + 1);
             } else if (token->type == TOKEN_MEOW) {
                 parser->current_pos++; // skip past 'meow' onto the return expression
@@ -469,7 +498,7 @@ ParseTreeNode **parse(Token *token_list, int depth) {
                 currentRoot = nextNode;
             }
         }
-        parser->current_pos++;
+        parser->current_pos++; // skip the TOKEN_NEWLINE or TOKEN_DEDENT that ended this statement
         if (currentRoot != NULL){
             ParseTreeNode *root = toRoot(currentRoot);
             if (node_list_count >= node_list_capacity) {

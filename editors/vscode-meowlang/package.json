@@ -1,0 +1,35 @@
+{
+  "name": "vscode-meowlang",
+  "displayName": "meowlang",
+  "description": "Syntax highlighting for meowlang (.meow) files",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "meowlang",
+        "aliases": [
+          "meowlang",
+          "meow"
+        ],
+        "extensions": [
+          ".meow"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "meowlang",
+        "scopeName": "source.meowlang",
+        "path": "./syntaxes/meowlang.tmLanguage.json"
+      }
+    ]
+  }
+}
