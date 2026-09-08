@@ -85,13 +85,10 @@ Token *popNextExpression(Parser *parser) { // pops the next expression for + - *
     return expressionTokens;
 }
 
-// Collects tokens between a matching openType/closeType pair (tracking
-// nesting depth, so an inner pair of the same kind doesn't end the outer
-// one early). consumeCloser controls whether the matching close token is
-// eaten from the stream: true for ()/[] pairs, which have nothing after
-// them that needs to see the closer; false for INDENT/DEDENT, since the
-// caller's own statement-level loop needs to stop AT the DEDENT and consume
-// it the same uniform way it already consumes a trailing TOKEN_NEWLINE.
+// Collects tokens between a matching openType/closeType pair, tracking
+// nesting depth so an inner pair of the same kind doesn't close it early.
+// consumeCloser is false for INDENT/DEDENT: the statement loop needs to
+// see the closing DEDENT itself, the same way it sees a closing TOKEN_NEWLINE.
 Token *popBalancedTokens(Parser *parser, enum TokenType openType, enum TokenType closeType, bool consumeCloser) {
     int capacity = 64;
     Token *tokens = (Token *)calloc(capacity, sizeof(Token)); // zeroed so unused slots read as TOKEN_NULL (0)
@@ -385,11 +382,8 @@ ParseTreeNode **parse(Token *token_list, int depth) {
         // Parse tokens and build the parse tree
         bool eof_reached = false;
         ParseTreeNode *currentRoot = NULL;
-        // Line by line parse. A statement also ends at TOKEN_DEDENT: an
-        // indented function body consumes tokens up to but not including
-        // its closing DEDENT (see popIndentedBlock), so the purr statement
-        // that opened it ends there just like any other statement ends at
-        // TOKEN_NEWLINE - both are skipped the same way below.
+        // A statement also ends at TOKEN_DEDENT, left unconsumed by
+        // popIndentedBlock for a function definition's body.
         while(parser->token_list[parser->current_pos].type != TOKEN_NEWLINE
             && parser->token_list[parser->current_pos].type != TOKEN_NULL
             && parser->token_list[parser->current_pos].type != TOKEN_DEDENT) {
@@ -466,7 +460,6 @@ ParseTreeNode **parse(Token *token_list, int depth) {
                     argCount++;
                 }
                 nextNode->functionDefinitionNode.argumentCount = argCount;
-                // current_pos now sits on the ':' that introduces the function body
                 if (parser->token_list[parser->current_pos].type != TOKEN_COLON) {
                     fprintf(stderr, "Parser error: expected ':' after function parameters\n");
                     exit(1);
