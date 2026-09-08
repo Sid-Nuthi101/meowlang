@@ -26,6 +26,13 @@ ParseTreeNode *toRoot(ParseTreeNode *currentRoot) {
     return root;
 }
 
+void expectTokenType(Parser *parser, enum TokenType expected, char *errorMessage) {
+    if (parser->token_list[parser->current_pos].type != expected) {
+        fprintf(stderr, "Parser error: %s\n", errorMessage);
+        exit(1);
+    }
+}
+
 bool isOperand(Token *token) {
     return (token->type == TOKEN_PLUS || token->type == TOKEN_MINUS ||
                     token->type == TOKEN_MULTIPLY || token->type == TOKEN_DIVIDE ||
@@ -460,20 +467,11 @@ ParseTreeNode **parse(Token *token_list, int depth) {
                     argCount++;
                 }
                 nextNode->functionDefinitionNode.argumentCount = argCount;
-                if (parser->token_list[parser->current_pos].type != TOKEN_COLON) {
-                    fprintf(stderr, "Parser error: expected ':' after function parameters\n");
-                    exit(1);
-                }
+                expectTokenType(parser, TOKEN_COLON, "expected ':' after function parameters");
                 parser->current_pos++; // eat ':'
-                if (parser->token_list[parser->current_pos].type != TOKEN_NEWLINE) {
-                    fprintf(stderr, "Parser error: expected newline after ':'\n");
-                    exit(1);
-                }
+                expectTokenType(parser, TOKEN_NEWLINE, "expected newline after ':'");
                 parser->current_pos++; // eat the newline
-                if (parser->token_list[parser->current_pos].type != TOKEN_INDENT) {
-                    fprintf(stderr, "Parser error: expected an indented block after function definition\n");
-                    exit(1);
-                }
+                expectTokenType(parser, TOKEN_INDENT, "expected an indented block after function definition");
                 Token *bodyTokens = popIndentedBlock(parser);
                 nextNode->functionDefinitionNode.functionCode = parse(bodyTokens, depth + 1);
             } else if (token->type == TOKEN_MEOW) {
