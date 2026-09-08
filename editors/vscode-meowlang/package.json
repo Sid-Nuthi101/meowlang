@@ -21,7 +21,11 @@
         "extensions": [
           ".meow"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/paw-light.svg",
+          "dark": "./icons/paw-dark.svg"
+        }
       }
     ],
     "grammars": [
