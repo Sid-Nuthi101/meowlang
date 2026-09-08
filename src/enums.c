@@ -31,6 +31,7 @@ enum TokenType {
     TOKEN_BRACKET_CLOSE,
     TOKEN_NEWLINE,
     TOKEN_COMMA,
+    TOKEN_COLON,
     TOKEN_PURR,
     TOKEN_MEOW,
     TOKEN_INDENT,
@@ -50,6 +51,17 @@ typedef struct {
     CodeSource *codeSource;
     int currentIndex;
     bool doneReading;
+
+    // Indentation tracking. indentStack holds the raw whitespace string for
+    // each currently-open indentation level (index 0 is always "", the
+    // column-0 base level), compared byte-for-byte rather than expanded to
+    // a numeric width - see updateIndentation() in lexer.c.
+    char **indentStack;
+    int indentStackSize;
+    int indentStackCapacity;
+    int pendingDedentCount; // TOKEN_DEDENTs queued up to be emitted one per nextToken() call
+    bool pendingIndent;     // a single TOKEN_INDENT queued up to be emitted
+    bool atLineStart;       // true right after a newline (or at index 0): next nextToken() call must check indentation before scanning a real token
 } Tokenizer;
 
 typedef struct {

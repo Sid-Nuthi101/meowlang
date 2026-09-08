@@ -1,6 +1,5 @@
-purr identity(x) {
+purr identity(x):
     meow x
-}
 
 s = "hello world"
 t = "line1\nline2\"quoted\""

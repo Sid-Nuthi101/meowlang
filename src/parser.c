@@ -118,6 +118,38 @@ Token *popInnerExpression(Parser *parser) { // parses ()
     return expressionTokens;
 }
 
+Token *popIndentedBlock(Parser *parser) { // parses an INDENT..DEDENT delimited function body, parallel to popInnerExpression's ()  handling
+    int capacity = 64;
+    Token *blockTokens = (Token *)calloc(capacity, sizeof(Token)); // zeroed so unused slots read as TOKEN_NULL (0)
+    int currentDepth = 1;
+    int count = 0;
+    parser->current_pos++; // eat the opening TOKEN_INDENT
+    while (
+        parser->token_list[parser->current_pos].type != TOKEN_EOF &&
+        parser->token_list[parser->current_pos].type != TOKEN_NULL
+    ) {
+        Token *token = &parser->token_list[parser->current_pos];
+        parser->current_pos++;
+        if (token->type == TOKEN_INDENT) {
+            currentDepth++;
+        }
+        if (token->type == TOKEN_DEDENT) {
+            currentDepth--;
+            if (currentDepth == 0)
+                return blockTokens;
+        }
+        if (count >= capacity) {
+            int oldCapacity = capacity;
+            capacity *= 2;
+            blockTokens = realloc(blockTokens, capacity * sizeof(Token));
+            memset(blockTokens + oldCapacity, 0, (capacity - oldCapacity) * sizeof(Token));
+        }
+        blockTokens[count++] = *token;
+
+    }
+    return blockTokens;
+}
+
 ParseTreeNode **popArguments(Parser *parser, int initialDepth) {
     Token *expressionTokens = popInnerExpression(parser);
     int cursor = 0; // popInnerExpression already strips the opening parenthesis
@@ -343,6 +375,7 @@ ParseTreeNode **parse(Token *token_list, int depth) {
     while (parser->token_list[parser->current_pos].type != TOKEN_EOF && parser->token_list[parser->current_pos].type != TOKEN_NULL) {
         // Parse tokens and build the parse tree
         bool eof_reached = false;
+        bool functionDefTerminatedLine = false;
         ParseTreeNode *currentRoot = NULL;
         // Line by line parse
         while(parser->token_list[parser->current_pos].type != TOKEN_NEWLINE 
@@ -420,8 +453,22 @@ ParseTreeNode **parse(Token *token_list, int depth) {
                     argCount++;
                 }
                 nextNode->functionDefinitionNode.argumentCount = argCount;
-                // current_pos now sits on the opening '{' of the function body
-                Token *bodyTokens = popInnerExpression(parser);
+                // current_pos now sits on the ':' that introduces the function body
+                if (parser->token_list[parser->current_pos].type != TOKEN_COLON) {
+                    fprintf(stderr, "Parser error: expected ':' after function parameters\n");
+                    exit(1);
+                }
+                parser->current_pos++; // eat ':'
+                if (parser->token_list[parser->current_pos].type != TOKEN_NEWLINE) {
+                    fprintf(stderr, "Parser error: expected newline after ':'\n");
+                    exit(1);
+                }
+                parser->current_pos++; // eat the newline
+                if (parser->token_list[parser->current_pos].type != TOKEN_INDENT) {
+                    fprintf(stderr, "Parser error: expected an indented block after function definition\n");
+                    exit(1);
+                }
+                Token *bodyTokens = popIndentedBlock(parser);
                 nextNode->functionDefinitionNode.functionCode = parse(bodyTokens, depth + 1);
             } else if (token->type == TOKEN_MEOW) {
                 parser->current_pos++; // skip past 'meow' onto the return expression
@@ -446,8 +493,23 @@ ParseTreeNode **parse(Token *token_list, int depth) {
             else if (currentRoot == NULL) {
                 currentRoot = nextNode;
             }
+
+            if (nextNode->type == FunctionDefinitionNode) {
+                // The body was delimited by INDENT/DEDENT tokens that
+                // popIndentedBlock already consumed internally (the same
+                // way popInnerExpression consumes a call's closing ')'),
+                // so no TOKEN_NEWLINE is left in the stream to end this
+                // logical line the way it would for any other statement -
+                // the statement is already complete, and current_pos is
+                // already sitting on the following line's first token
+                // (not a terminator to be skipped below).
+                functionDefTerminatedLine = true;
+                break;
+            }
         }
-        parser->current_pos++;
+        if (!functionDefTerminatedLine) {
+            parser->current_pos++;
+        }
         if (currentRoot != NULL){
             ParseTreeNode *root = toRoot(currentRoot);
             if (node_list_count >= node_list_capacity) {
