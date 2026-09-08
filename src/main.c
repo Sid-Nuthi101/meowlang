@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
                     fprintf(stdout, "\n\n");
                 }
                 fprintf(stdout, "\n\n RUNNING PROGRAM \n\n");
-                run(parse_tree);
+                return run(parse_tree);
             }
         }
         return 0;

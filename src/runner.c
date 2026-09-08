@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #import "enums.c"
+#import "builtins.c"
 
 char *normalSpacing = "    ";
 
@@ -304,6 +307,13 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
 
         case FunctionCallNode: {
             int argCount = currentNode->functionCallNode.argumentCount;
+            Builtin *builtin = findBuiltin(currentNode->functionCallNode.functionName);
+            if (builtin != NULL && argCount != builtin->argCount) {
+                fprintf(stderr,
+                        "generateProgram: %s() takes exactly %d argument(s) (got %d)\n",
+                        builtin->name, builtin->argCount, argCount);
+                exit(1);
+            }
             if (argCount > 8) {
                 fprintf(stderr,
                         "generateProgram: function calls with more than 8 arguments are not supported (call to %s)\n",
@@ -331,7 +341,11 @@ char *generateProgram(FILE *out, ParseTreeNode *currentNode, ParseTreeNode *pare
                 }
             }
 
-            fprintf(out, "%sbl _meowfn_%s\n", normalSpacing, currentNode->functionCallNode.functionName);
+            if (builtin != NULL) {
+                fprintf(out, "%sbl %s\n", normalSpacing, builtin->asmSymbol);
+            } else {
+                fprintf(out, "%sbl _meowfn_%s\n", normalSpacing, currentNode->functionCallNode.functionName);
+            }
 
             for (int i = 0; i < NUM_SCRATCH_REGISTERS; i++) {
                 if (spilled[i]) {
@@ -425,8 +439,24 @@ void generateFunctionBody(FILE *out, ParseTreeNode **statements, char **paramNam
     fprintf(out, "%sret\n", normalSpacing);
 }
 
-void run(ParseTreeNode **treeNodes) {
-    FILE *out = fopen("outputs/meowlang_output.s", "w");
+int run(ParseTreeNode **treeNodes) {
+    char *tmpBase = getenv("TMPDIR");
+    if (tmpBase == NULL) {
+        tmpBase = "/tmp";
+    }
+    char tempDirTemplate[512];
+    snprintf(tempDirTemplate, sizeof(tempDirTemplate), "%s/meowlang-XXXXXX", tmpBase);
+    char *tempDir = mkdtemp(tempDirTemplate);
+    if (tempDir == NULL) {
+        fprintf(stderr, "run: could not create a temporary build directory\n");
+        exit(1);
+    }
+
+    char asmPath[600];
+    char binPath[600];
+    snprintf(asmPath, sizeof(asmPath), "%s/meowlang_output.s", tempDir);
+
+    FILE *out = fopen(asmPath, "w");
 
     int totalCount = 0;
     for (int i = 0; treeNodes[i] != NULL; i++) {
@@ -479,12 +509,24 @@ void run(ParseTreeNode **treeNodes) {
     free(mainStatements);
     fclose(out);
 
-    int result = system(
-        "clang outputs/meowlang_output.s -o outputs/hi"
-    );
+    char compileCommand[1300];
+    snprintf(compileCommand, sizeof(compileCommand), "clang %s -o %s", asmPath, binPath);
+    int result = system(compileCommand);
 
     if (result != 0) {
-        fprintf(stderr, "Compilation failed\n");
+        // Leave the assembly behind on failure so it can be inspected; only the
+        // directory's compiled binary (which doesn't exist) is skipped.
+        fprintf(stderr, "Compilation failed (assembly left at %s)\n", asmPath);
         exit(1);
     }
+
+    fflush(NULL); // flush our own buffered stdout/stderr before the child writes to the same terminal
+    int runResult = system(binPath);
+    int exitCode = WEXITSTATUS(runResult);
+
+    remove(asmPath);
+    remove(binPath);
+    rmdir(tempDir);
+
+    return exitCode;
 }

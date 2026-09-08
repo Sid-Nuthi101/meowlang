@@ -1,0 +1,4 @@
+s = "hello from a variable"
+
+yowl("hello world")
+yowl(s)
