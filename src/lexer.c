@@ -71,22 +71,6 @@ void pushIndent(Tokenizer *tokenizer, char *whitespace) {
     tokenizer->indentStack[tokenizer->indentStackSize - 1] = whitespace;
 }
 
-// Blank lines don't affect indentation (matching Python); returns the index
-// where the next non-blank line's leading whitespace begins.
-int skipBlankLines(char *program, int idx) {
-    while (1) {
-        int lineStart = idx;
-        while (program[idx] == ' ' || program[idx] == '\t') {
-            idx++;
-        }
-        if (program[idx] == '\n') {
-            idx++;
-            continue;
-        }
-        return lineStart;
-    }
-}
-
 // Pops the indent stack down to size newSize, freeing the discarded levels
 // and queuing one TOKEN_DEDENT per level popped.
 void popIndentStackTo(Tokenizer *tokenizer, int newSize) {
@@ -97,20 +81,28 @@ void popIndentStackTo(Tokenizer *tokenizer, int newSize) {
     tokenizer->indentStackSize = newSize;
 }
 
-// Compares this line's leading whitespace against the indent stack
-// byte-for-byte (tabs and spaces are never treated as interchangeable, so
-// ambiguous mixing is rejected instead of guessed at). Pushes or pops the
+// Measures this line's leading whitespace (skipping any blank lines first,
+// which don't affect indentation) and compares it against the indent stack
+// byte-for-byte - tabs and spaces are never treated as interchangeable, so
+// ambiguous mixing is rejected instead of guessed at. Pushes or pops the
 // stack as needed and returns a TOKEN_INDENT if one was opened; a dedent
 // instead queues into pendingDedentCount, since nextToken() can only
 // return one token per call.
 Token *updateIndentation(Tokenizer *tokenizer) {
     char *program = tokenizer->codeSource->program;
-    int wsStart = skipBlankLines(program, tokenizer->currentIndex);
-
-    int idx = wsStart;
-    while (program[idx] == ' ' || program[idx] == '\t') {
+    int idx = tokenizer->currentIndex;
+    int wsStart = idx;
+    while (1) {
+        wsStart = idx;
+        while (program[idx] == ' ' || program[idx] == '\t') {
+            idx++;
+        }
+        if (program[idx] != '\n') {
+            break;
+        }
         idx++;
     }
+
     if (program[idx] == '\0') {
         tokenizer->currentIndex = idx;
         return NULL;
@@ -187,12 +179,12 @@ Token *nextToken(Tokenizer *tokenizer) {
 
     // Find nearest non-whitespace character
     while (isStopLineCharacter(program[currentIndex])) {
-        if (program[currentIndex] == '\n') { // If the current character is a newline, return a newline token
+        if (program[currentIndex] == '\n') {
             Token *token = (Token *)malloc(sizeof(Token));
             token->type = TOKEN_NEWLINE;
             token->value = "\n";
             tokenizer->currentIndex = currentIndex + 1;
-            tokenizer->atLineStart = true; // indentation of the next line matters
+            tokenizer->atLineStart = true;
             return token;
         } else if (program[currentIndex] == '\0') {
             return emitEOFOrDedent(tokenizer, currentIndex);

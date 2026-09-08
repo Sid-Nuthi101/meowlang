@@ -8,6 +8,7 @@
     { "include": "#strings" },
     { "include": "#numbers" },
     { "include": "#operators" },
+    { "include": "#punctuation" },
     { "include": "#identifiers" }
   ],
   "repository": {
@@ -37,6 +38,10 @@
     "operators": {
       "match": "<=|>=|[-+*/=<>&|!]",
       "name": "keyword.operator.meowlang"
+    },
+    "punctuation": {
+      "match": ":",
+      "name": "punctuation.separator.colon.meowlang"
     },
     "identifiers": {
       "match": "[A-Za-z_][A-Za-z0-9_]*",

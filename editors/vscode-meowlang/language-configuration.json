@@ -9,5 +9,8 @@
   "surroundingPairs": [
     ["(", ")"],
     ["\"", "\""]
-  ]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*purr\\b.*:\\s*$"
+  }
 }
